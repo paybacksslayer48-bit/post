@@ -60,10 +60,21 @@ export function Canvas({ slide, aspectRatio, carouselRef, slides, activeSlideId 
       </div>
 
       {/* Hidden Slides for Export */}
-      <div className="absolute top-0 left-0 opacity-0 pointer-events-none -z-10">
+      <div className="fixed top-[-9999px] left-[-9999px] pointer-events-none -z-10">
         {slides.map((s) => (
           s.id !== activeSlideId && (
-            <SlidePreview key={s.id} slide={s} aspectRatio={aspectRatio} id={`slide-${s.id}`} />
+            <div 
+              key={s.id}
+              style={{
+                width: `${width}px`,
+                height: `${height}px`,
+                position: 'absolute',
+                top: 0,
+                left: 0,
+              }}
+            >
+              <SlidePreview slide={s} aspectRatio={aspectRatio} id={`slide-${s.id}`} />
+            </div>
           )
         ))}
       </div>

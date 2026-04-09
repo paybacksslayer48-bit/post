@@ -155,8 +155,9 @@ export default function App() {
       if (!node) throw new Error('Slide node not found');
       
       const dataUrl = await htmlToImage.toPng(node, {
-        pixelRatio: 3,
+        pixelRatio: 2,
         quality: 1,
+        useCORS: true,
       });
       saveAs(dataUrl, `slide-${activeSlideId}.png`);
     } catch (err) {
@@ -186,10 +187,28 @@ export default function App() {
         const node = document.getElementById(`slide-${slide.id}`);
         if (!node) continue;
         
+        // Temporarily make it visible for html-to-image to work properly
+        const originalStyle = node.style.cssText;
+        const { width, height } = getDimensions();
+        
+        // If it's the active slide, it's already visible and has dimensions in Canvas.tsx.
+        // But for hidden slides, we need to ensure they are captured correctly.
+        // To be safe, we can apply this to all slides during capture, or just rely on the wrapper.
+        // Actually, node is the SlidePreview itself, which doesn't have width/height.
+        // The wrapper has width/height. Let's get the wrapper.
+        const wrapper = node.parentElement;
+        if (!wrapper) continue;
+        
+        const wrapperOriginalStyle = wrapper.style.cssText;
+        wrapper.style.cssText = `width: ${width}px; height: ${height}px; position: fixed; top: 0; left: 0; z-index: 9999; opacity: 1; pointer-events: none; transform: none;`;
+        
         const dataUrl = await htmlToImage.toPng(node, {
-          pixelRatio: 3,
+          pixelRatio: 2,
           quality: 1,
+          useCORS: true,
         });
+        
+        wrapper.style.cssText = wrapperOriginalStyle;
         
         const base64Data = dataUrl.replace(/^data:image\/png;base64,/, "");
         postFolder.file(`slide-${i + 1}.png`, base64Data, { base64: true });
@@ -205,16 +224,21 @@ export default function App() {
     }
   };
 
+  const getDimensions = () => {
+    switch (aspectRatio) {
+      case '1:1': return { width: 1080, height: 1080 };
+      case '4:5': return { width: 1080, height: 1350 };
+      case '9:16': return { width: 1080, height: 1920 };
+    }
+  };
+
   const handleExportBundle = async () => {
     setIsExporting(true);
     try {
-      const zip = new JSZip();
-      
       for (const post of posts) {
+        const zip = new JSZip();
         const postFolderName = post.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() || `post_${post.id}`;
-        const postFolder = zip.folder(postFolderName);
-        if (!postFolder) continue;
-
+        
         for (let i = 0; i < post.slides.length; i++) {
           const slide = post.slides[i];
           const node = document.getElementById(`bundle-slide-${post.id}-${slide.id}`);
@@ -222,22 +246,28 @@ export default function App() {
           
           // Temporarily make it visible for html-to-image to work properly
           const originalStyle = node.style.cssText;
-          node.style.cssText = 'position: fixed; top: 0; left: 0; z-index: 9999; opacity: 1; pointer-events: none;';
+          const { width, height } = getDimensions();
+          node.style.cssText = `width: ${width}px; height: ${height}px; position: fixed; top: 0; left: 0; z-index: 9999; opacity: 1; pointer-events: none; transform: none;`;
           
+          console.log(`Exporting bundle slide ${post.id}-${slide.id}`);
           const dataUrl = await htmlToImage.toPng(node, {
-            pixelRatio: 3,
+            pixelRatio: 2,
             quality: 1,
+            useCORS: true,
           });
           
           node.style.cssText = originalStyle;
           
           const base64Data = dataUrl.replace(/^data:image\/png;base64,/, "");
-          postFolder.file(`slide-${i + 1}.png`, base64Data, { base64: true });
+          zip.file(`slide-${i + 1}.png`, base64Data, { base64: true });
         }
+        
+        const content = await zip.generateAsync({ type: 'blob' });
+        saveAs(content, `${postFolderName}.zip`);
+        
+        // Add a small delay between downloads to prevent browser blocking and allow memory cleanup
+        await new Promise(resolve => setTimeout(resolve, 800));
       }
-      
-      const content = await zip.generateAsync({ type: 'blob' });
-      saveAs(content, 'abacus-mates-bundle.zip');
     } catch (err) {
       console.error('Export bundle failed', err);
       alert('Export bundle failed. See console for details.');
@@ -355,11 +385,21 @@ export default function App() {
           />
           
           {/* Hidden container for ALL posts to allow bundle export */}
-          <div className="absolute top-0 left-0 opacity-0 pointer-events-none -z-20">
+          <div className="fixed top-[-9999px] left-[-9999px] pointer-events-none -z-20">
             {posts.map(post => (
               <div key={`export-post-${post.id}`}>
                 {post.slides.map(s => (
-                  <div key={`export-slide-${post.id}-${s.id}`} id={`bundle-slide-${post.id}-${s.id}`}>
+                  <div 
+                    key={`export-slide-${post.id}-${s.id}`} 
+                    id={`bundle-slide-${post.id}-${s.id}`}
+                    style={{
+                      width: `${getDimensions().width}px`,
+                      height: `${getDimensions().height}px`,
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                    }}
+                  >
                     <SlidePreview slide={s} aspectRatio={aspectRatio} id={`bundle-slide-inner-${post.id}-${s.id}`} />
                   </div>
                 ))}
